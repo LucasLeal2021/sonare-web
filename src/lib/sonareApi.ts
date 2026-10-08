@@ -8,7 +8,8 @@ export async function repassarParaApi(caminho: string, init?: RequestInit) {
   try {
     const resposta = await fetch(`${process.env.API_URL}${caminho}`, {
       ...init,
-      headers: { "Content-Type": "application/json" },
+      // Só anuncia JSON quando há corpo: o Fastify recusa (400) um Content-Type JSON sem corpo, como no DELETE
+      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
       cache: "no-store",
     });
     if (resposta.status === 204) return new Response(null, { status: 204 }); // sucesso sem corpo (ex.: apagar)

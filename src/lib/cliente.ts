@@ -44,6 +44,9 @@ export const clienteHttp: ClienteDaSonare = {
   },
   async apagar(criacaoId) {
     const resposta = await fetch(`/api/criacoes/${encodeURIComponent(criacaoId)}`, { method: "DELETE" });
-    return resposta.status === 204 ? {} : resposta.json();
+    if (resposta.status === 204) return {};
+    // Qualquer outra resposta é recusa: nunca tratar como "apagado" (a Criação continuaria no banco)
+    const corpo = await resposta.json().catch(() => ({}));
+    return { erro: corpo.erro ?? "Não foi possível apagar agora. Tente de novo." };
   },
 };

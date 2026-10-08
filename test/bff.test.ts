@@ -54,10 +54,11 @@ describe("BFF: POST /api/criacoes", () => {
     expect(chamadas.map((c) => c.url)).toEqual(["http://api.falsa:3333/criacoes?depoisDe=c-20"]);
   });
 
-  it("apagar é repassado à sonare-api, e o 204 (sem corpo) chega ao navegador como 204", async () => {
-    const chamadas: { url: string; metodo?: string }[] = [];
+  it("apagar é repassado à sonare-api SEM anunciar um corpo JSON, e o 204 chega ao navegador como 204", async () => {
+    // O Fastify recusa com 400 um Content-Type: application/json sem corpo
+    const chamadas: { url: string; metodo?: string; contentType?: string }[] = [];
     vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-      chamadas.push({ url, metodo: init?.method });
+      chamadas.push({ url, metodo: init?.method, contentType: new Headers(init?.headers).get("content-type") ?? undefined });
       return new Response(null, { status: 204 });
     });
 
@@ -66,7 +67,7 @@ describe("BFF: POST /api/criacoes", () => {
     });
 
     expect(resposta.status).toBe(204);
-    expect(chamadas).toEqual([{ url: "http://api.falsa:3333/criacoes/c-1", metodo: "DELETE" }]);
+    expect(chamadas).toEqual([{ url: "http://api.falsa:3333/criacoes/c-1", metodo: "DELETE", contentType: undefined }]);
   });
 
   it("se a sonare-api está fora do ar, responde 502 com uma mensagem em português", async () => {
