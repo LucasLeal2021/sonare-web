@@ -1,0 +1,7 @@
+# Sempre LF no repositório e na pasta de trabalho (o build roda em Linux na EC2).
+* text=auto eol=lf
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.svg text

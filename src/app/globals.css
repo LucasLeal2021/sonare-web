@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* The Silent Palette: só estas cores existem no projeto. O `initial` apaga a paleta padrão
+   do Tailwind, então um "bg-purple-500" nem funciona — ninguém usa neon por engano. */
+@theme {
+  --color-*: initial;
+  --color-papel: #f9f9f6; /* fundo: papel de partitura */
+  --color-grafite: #1a1a1a; /* textos e ação principal */
+  --color-nevoa: #d2e0e6; /* único destaque: estados ativos */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+}
+
+/* As fontes vêm do next/font (layout.tsx) como variáveis CSS */
+@theme inline {
+  --font-titulo: var(--font-instrument-serif);
+  --font-ui: var(--font-inter);
+  --font-logo: var(--font-jost);
+}
+
+/* O ponto de "sonare." gerando: círculos finos que se expandem e somem, como uma onda na água */
+@keyframes onda {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(7);
+    opacity: 0;
+  }
+}
+
+.onda {
+  animation: onda 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onda {
+    animation: none;
+    opacity: 0.6;
+  }
+}
