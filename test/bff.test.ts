@@ -1,13 +1,13 @@
 // O BFF (as rotas /api/* do Next) só repassa para a sonare-api, que aqui é falsa.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { POST } from "@/app/api/criacoes/route";
+import { GET, POST } from "@/app/api/criacoes/route";
 
 type Chamada = { url: string; corpo: unknown };
 
 function apiFalsa(status: number, resposta: object) {
   const chamadas: Chamada[] = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-    chamadas.push({ url, corpo: JSON.parse(String(init?.body)) });
+    chamadas.push({ url, corpo: init?.body ? JSON.parse(String(init.body)) : undefined });
     return Response.json(resposta, { status });
   });
   return chamadas;
@@ -42,6 +42,15 @@ describe("BFF: POST /api/criacoes", () => {
 
     expect(resposta.status).toBe(400);
     expect(await resposta.json()).toEqual({ erro: "Escreva o Texto da Narração." });
+  });
+
+  it("a lista da Biblioteca é repassada com a página pedida", async () => {
+    const chamadas = apiFalsa(200, { criacoes: [] });
+
+    const resposta = await GET(new Request("http://localhost:3000/api/criacoes?depoisDe=c-20"));
+
+    expect(resposta.status).toBe(200);
+    expect(chamadas.map((c) => c.url)).toEqual(["http://api.falsa:3333/criacoes?depoisDe=c-20"]);
   });
 
   it("se a sonare-api está fora do ar, responde 502 com uma mensagem em português", async () => {

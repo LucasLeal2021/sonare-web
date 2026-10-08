@@ -14,9 +14,12 @@ export type Criacao = {
 
 export type PedidoDeNarracao = { tipo: "narracao"; texto: string; voz: string };
 
+export type PaginaDaBiblioteca = { criacoes: Criacao[]; proximaPagina?: string };
+
 export interface ClienteDaSonare {
   criar(pedido: PedidoDeNarracao): Promise<{ criacaoId: string } | { erro: string }>;
   consultar(criacaoId: string): Promise<Criacao>;
+  listar(depoisDe?: string): Promise<PaginaDaBiblioteca>;
 }
 
 export const clienteHttp: ClienteDaSonare = {
@@ -27,5 +30,11 @@ export const clienteHttp: ClienteDaSonare = {
   async consultar(criacaoId) {
     const resposta = await fetch(`/api/criacoes/${encodeURIComponent(criacaoId)}`, { cache: "no-store" });
     return resposta.json();
+  },
+  async listar(depoisDe) {
+    const consulta = depoisDe ? `?depoisDe=${encodeURIComponent(depoisDe)}` : "";
+    const resposta = await fetch(`/api/criacoes${consulta}`, { cache: "no-store" });
+    const pagina = await resposta.json();
+    return { criacoes: pagina.criacoes ?? [], proximaPagina: pagina.proximaPagina };
   },
 };

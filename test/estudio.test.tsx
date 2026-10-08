@@ -1,71 +1,110 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { Estudio } from "@/components/Estudio";
 import type { ClienteDaSonare, Criacao } from "@/lib/cliente";
 
-/** API falsa: aceita o pedido e responde cada consulta com o próximo Status da lista. */
-function clienteFalso(respostas: Partial<Criacao>[]): ClienteDaSonare & { pedidos: unknown[] } {
+const narracao = (criacaoId: string, extra: Partial<Criacao> = {}): Criacao => ({
+  criacaoId,
+  tipo: "narracao",
+  texto: `Texto de ${criacaoId}`,
+  voz: "pf_dora",
+  status: "pronta",
+  urlAudio: `http://s3.falso/${criacaoId}.mp3`,
+  ...extra,
+});
+
+/** API falsa: páginas da Biblioteca e, para cada consulta, o próximo Status da lista. */
+function clienteFalso({
+  paginas = { "": { criacoes: [] } } as Record<string, { criacoes: Criacao[]; proximaPagina?: string }>,
+  statusDaNova = [{ status: "pronta" }] as Partial<Criacao>[],
+  recusa = undefined as string | undefined,
+} = {}): ClienteDaSonare & { pedidos: unknown[] } {
   const pedidos: unknown[] = [];
   return {
     pedidos,
     async criar(pedido) {
       pedidos.push(pedido);
-      return { criacaoId: "c-1" };
+      return recusa ? { erro: recusa } : { criacaoId: "nova" };
     },
     async consultar(criacaoId) {
-      const proxima = respostas.length > 1 ? respostas.shift()! : respostas[0];
-      return { criacaoId, tipo: "narracao", texto: "Olá!", voz: "pf_dora", status: "na-fila", ...proxima };
+      const proximo = statusDaNova.length > 1 ? statusDaNova.shift()! : statusDaNova[0];
+      return narracao(criacaoId, { texto: "Olá!", urlAudio: undefined, ...proximo, ...(proximo.status === "pronta" ? { urlAudio: "http://s3.falso/nova.mp3" } : {}) });
+    },
+    async listar(depoisDe) {
+      return paginas[depoisDe ?? ""];
     },
   };
 }
 
-async function gerarNarracao(cliente: ClienteDaSonare) {
+function abrir(cliente: ClienteDaSonare) {
   // Strict Mode como no `next dev`: o React monta, desmonta e monta de novo de propósito
   render(<Estudio cliente={cliente} intervaloMs={5} />, { reactStrictMode: true });
-  await userEvent.type(screen.getByLabelText("Texto"), "Olá!");
-  await userEvent.click(screen.getByRole("button", { name: "Gerar" }));
 }
 
+async function gerarNarracao(cliente: ClienteDaSonare) {
+  abrir(cliente);
+  await userEvent.type(screen.getByLabelText("Texto"), "Olá!");
+  await userEvent.click(screen.getByRole("button", { name: "Gerar Narração" }));
+}
+
+const biblioteca = () => screen.getByRole("region", { name: "Minhas Criações" });
+
 describe("Estudio", () => {
-  it("escrever o Texto e clicar em Gerar faz o ponto pulsar enquanto a Narração está na fila", async () => {
-    const cliente = clienteFalso([{ status: "na-fila" }]);
+  it("a Biblioteca mostra as Criações que já existem: prontas com player, falhas com aviso", async () => {
+    abrir(
+      clienteFalso({
+        paginas: { "": { criacoes: [narracao("a"), narracao("b", { status: "falhou", urlAudio: undefined })] } },
+      }),
+    );
+
+    const player = await within(biblioteca()).findByLabelText("Ouvir: Texto de a");
+    expect(player.getAttribute("src")).toBe("http://s3.falso/a.mp3");
+    expect(within(biblioteca()).getByText("Não deu certo. Tente novamente.")).toBeTruthy();
+  });
+
+  it("gerar uma Narração a coloca no topo da Biblioteca, pulsando, até virar player", async () => {
+    const cliente = clienteFalso({ statusDaNova: [{ status: "na-fila" }, { status: "pronta" }] });
 
     await gerarNarracao(cliente);
 
-    expect(await screen.findByRole("status", { name: "Gerando a Narração" })).toBeTruthy();
+    expect(await within(biblioteca()).findByRole("status", { name: "Gerando a Narração" })).toBeTruthy();
+    const player = await within(biblioteca()).findByLabelText("Ouvir: Olá!");
+    expect(player.getAttribute("src")).toBe("http://s3.falso/nova.mp3");
+    expect(within(biblioteca()).queryByRole("status", { name: "Gerando a Narração" })).toBeNull();
     expect(cliente.pedidos).toEqual([{ tipo: "narracao", texto: "Olá!", voz: "pf_dora" }]);
   });
 
-  it("quando a Narração fica pronta, o ponto para e aparece o player com o Áudio", async () => {
-    const cliente = clienteFalso([{ status: "na-fila" }, { status: "pronta", urlAudio: "http://s3.falso/c-1.mp3" }]);
+  it("uma Narração que falha avisa que não deu certo", async () => {
+    await gerarNarracao(clienteFalso({ statusDaNova: [{ status: "falhou", motivo: "Kokoro falhou" }] }));
 
-    await gerarNarracao(cliente);
-
-    const player = await screen.findByLabelText("Ouvir a Narração");
-    expect(player.getAttribute("src")).toBe("http://s3.falso/c-1.mp3");
-    expect(screen.queryByRole("status", { name: "Gerando a Narração" })).toBeNull();
+    expect(await within(biblioteca()).findByText("Não deu certo. Tente novamente.")).toBeTruthy();
   });
 
-  it("quando a Narração falha, avisa que não deu certo", async () => {
-    const cliente = clienteFalso([{ status: "falhou", motivo: "Kokoro falhou" }]);
-
-    await gerarNarracao(cliente);
-
-    expect(await screen.findByText("Não deu certo. Tente novamente.")).toBeTruthy();
-  });
-
-  it("se o pedido é recusado (ex.: a Sonare fora do ar), mostra a mensagem e o ponto não fica pulsando", async () => {
-    const cliente: ClienteDaSonare = {
-      criar: async () => ({ erro: "A Sonare está fora do ar. Tente de novo em instantes." }),
-      consultar: async () => {
-        throw new Error("não deveria consultar");
-      },
-    };
-
-    await gerarNarracao(cliente);
+  it("um pedido recusado mostra a mensagem no cartão de Narração e não entra na Biblioteca", async () => {
+    await gerarNarracao(clienteFalso({ recusa: "A Sonare está fora do ar. Tente de novo em instantes." }));
 
     expect((await screen.findByRole("alert")).textContent).toBe("A Sonare está fora do ar. Tente de novo em instantes.");
-    expect(screen.queryByRole("status", { name: "Gerando a Narração" })).toBeNull();
+    expect(within(biblioteca()).queryByRole("status", { name: "Gerando a Narração" })).toBeNull();
+  });
+
+  it("o cartão de Imagem avisa que chega em breve", () => {
+    abrir(clienteFalso());
+
+    expect((screen.getByRole("button", { name: "Em breve" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("'Carregar mais' traz a próxima página da Biblioteca", async () => {
+    abrir(
+      clienteFalso({
+        paginas: { "": { criacoes: [narracao("a")], proximaPagina: "a" }, a: { criacoes: [narracao("b")] } },
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Carregar mais" }));
+
+    expect(await within(biblioteca()).findByLabelText("Ouvir: Texto de b")).toBeTruthy();
+    expect(within(biblioteca()).getByLabelText("Ouvir: Texto de a")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Carregar mais" })).toBeNull();
   });
 });
