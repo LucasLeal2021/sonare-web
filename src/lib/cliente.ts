@@ -1,25 +1,28 @@
 // Como a tela conversa com o BFF (as rotas /api/* do próprio Next).
 
 export type Status = "na-fila" | "pronta" | "falhou";
+export type TipoDeCriacao = "narracao" | "imagem";
 
-export type Criacao = {
-  criacaoId: string;
-  tipo: "narracao";
-  texto: string;
-  voz: string;
-  status: Status;
-  urlAudio?: string;
-  motivo?: string;
-};
+/**
+ * `urlDownload`: link que faz o navegador SALVAR o arquivo (em vez de abri-lo).
+ * `recusada`: o provedor recusou de vez (ex.: filtro de conteúdo) e o `motivo` é para o Artista ler.
+ */
+type Comum = { criacaoId: string; status: Status; motivo?: string; recusada?: boolean; urlDownload?: string };
 
-export type PedidoDeNarracao = { tipo: "narracao"; texto: string; voz: string };
+export type Criacao =
+  | (Comum & { tipo: "narracao"; texto: string; voz: string; urlAudio?: string })
+  | (Comum & { tipo: "imagem"; descricao: string; urlImagem?: string; prompt?: string });
+
+export type Pedido = { tipo: "narracao"; texto: string; voz: string } | { tipo: "imagem"; descricao: string };
 
 export type PaginaDaBiblioteca = { criacoes: Criacao[]; proximaPagina?: string };
 
 export interface ClienteDaSonare {
-  criar(pedido: PedidoDeNarracao): Promise<{ criacaoId: string } | { erro: string }>;
+  criar(pedido: Pedido): Promise<{ criacaoId: string } | { erro: string }>;
   consultar(criacaoId: string): Promise<Criacao>;
-  listar(depoisDe?: string): Promise<PaginaDaBiblioteca>;
+  listar(depoisDe?: string, tipo?: TipoDeCriacao): Promise<PaginaDaBiblioteca>;
+  /** Apaga de vez. Devolve `erro` se a API recusou (ex.: Criação ainda na fila). */
+  apagar(criacaoId: string): Promise<{ erro?: string }>;
 }
 
 export const clienteHttp: ClienteDaSonare = {
@@ -31,10 +34,16 @@ export const clienteHttp: ClienteDaSonare = {
     const resposta = await fetch(`/api/criacoes/${encodeURIComponent(criacaoId)}`, { cache: "no-store" });
     return resposta.json();
   },
-  async listar(depoisDe) {
-    const consulta = depoisDe ? `?depoisDe=${encodeURIComponent(depoisDe)}` : "";
-    const resposta = await fetch(`/api/criacoes${consulta}`, { cache: "no-store" });
+  async listar(depoisDe, tipo) {
+    const consulta = new URLSearchParams();
+    if (depoisDe) consulta.set("depoisDe", depoisDe);
+    if (tipo) consulta.set("tipo", tipo);
+    const resposta = await fetch(`/api/criacoes?${consulta}`, { cache: "no-store" });
     const pagina = await resposta.json();
     return { criacoes: pagina.criacoes ?? [], proximaPagina: pagina.proximaPagina };
+  },
+  async apagar(criacaoId) {
+    const resposta = await fetch(`/api/criacoes/${encodeURIComponent(criacaoId)}`, { method: "DELETE" });
+    return resposta.status === 204 ? {} : resposta.json();
   },
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { clienteHttp, type ClienteDaSonare } from "@/lib/cliente";
+import { clienteHttp, type ClienteDaSonare, type TipoDeCriacao } from "@/lib/cliente";
 import { Biblioteca, type ItemDaBiblioteca } from "./Biblioteca";
 import { CartaoImagem } from "./CartaoImagem";
 import { CartaoNarracao } from "./CartaoNarracao";
@@ -11,12 +11,13 @@ import { Logo } from "./Logo";
 export function Estudio({ cliente = clienteHttp, intervaloMs = 3000 }: { cliente?: ClienteDaSonare; intervaloMs?: number }) {
   const [criacoes, setCriacoes] = useState<ItemDaBiblioteca[]>([]);
   const [proximaPagina, setProximaPagina] = useState<string>();
+  const [filtro, setFiltro] = useState<TipoDeCriacao>();
 
-  // Primeira página da Biblioteca. O `ativo` ignora a resposta se a tela já foi desmontada
-  // (o Strict Mode monta duas vezes; sem isso, a lista viria duplicada).
+  // Primeira página da Biblioteca (de novo a cada troca de filtro). O `ativo` ignora a resposta
+  // se a tela já foi desmontada (o Strict Mode monta duas vezes; sem isso, a lista viria duplicada).
   useEffect(() => {
     let ativo = true;
-    cliente.listar().then((pagina) => {
+    cliente.listar(undefined, filtro).then((pagina) => {
       if (!ativo) return;
       setCriacoes(pagina.criacoes);
       setProximaPagina(pagina.proximaPagina);
@@ -24,7 +25,7 @@ export function Estudio({ cliente = clienteHttp, intervaloMs = 3000 }: { cliente
     return () => {
       ativo = false;
     };
-  }, [cliente]);
+  }, [cliente, filtro]);
 
   // Polling (Q5): enquanto houver Criação na fila, pergunta o Status de cada uma a cada intervaloMs
   useEffect(() => {
@@ -37,7 +38,7 @@ export function Estudio({ cliente = clienteHttp, intervaloMs = 3000 }: { cliente
       setCriacoes((atuais) =>
         atuais.map((c) => {
           const nova = atualizadas.find((a) => a.criacaoId === c.criacaoId && a.status); // ignora respostas de erro
-          return nova ? { ...c, ...nova } : c;
+          return nova ? ({ ...c, ...nova } as ItemDaBiblioteca) : c;
         }),
       );
     }, intervaloMs);
@@ -48,9 +49,22 @@ export function Estudio({ cliente = clienteHttp, intervaloMs = 3000 }: { cliente
   }, [criacoes, cliente, intervaloMs]);
 
   async function carregarMais() {
-    const pagina = await cliente.listar(proximaPagina);
+    const pagina = await cliente.listar(proximaPagina, filtro);
     setCriacoes((atuais) => [...atuais, ...pagina.criacoes]);
     setProximaPagina(pagina.proximaPagina);
+  }
+
+  // A Criação nova entra no topo, pulsando, se o filtro atual a mostra
+  function aoCriar(nova: ItemDaBiblioteca) {
+    if (filtro && filtro !== nova.tipo) return;
+    setCriacoes((atuais) => [nova, ...atuais]);
+  }
+
+  // Apagar de vez: só tira da Biblioteca depois que a API confirmou
+  async function apagar(criacaoId: string) {
+    const { erro } = await cliente.apagar(criacaoId);
+    if (!erro) setCriacoes((atuais) => atuais.filter((c) => c.criacaoId !== criacaoId));
+    return erro;
   }
 
   const algumaGerando = criacoes.some((c) => c.status === "na-fila");
@@ -65,14 +79,19 @@ export function Estudio({ cliente = clienteHttp, intervaloMs = 3000 }: { cliente
       <div className="grid gap-6 md:grid-cols-2">
         <CartaoNarracao
           cliente={cliente}
-          aoCriar={(nova) =>
-            setCriacoes((atuais) => [{ ...nova, tipo: "narracao", status: "na-fila", criadaAgora: true }, ...atuais])
-          }
+          aoCriar={(nova) => aoCriar({ ...nova, tipo: "narracao", status: "na-fila", criadaAgora: true })}
         />
-        <CartaoImagem />
+        <CartaoImagem cliente={cliente} aoCriar={(nova) => aoCriar({ ...nova, tipo: "imagem", status: "na-fila", criadaAgora: true })} />
       </div>
 
-      <Biblioteca criacoes={criacoes} temMais={Boolean(proximaPagina)} aoCarregarMais={carregarMais} />
+      <Biblioteca
+        criacoes={criacoes}
+        filtro={filtro}
+        aoFiltrar={setFiltro}
+        temMais={Boolean(proximaPagina)}
+        aoCarregarMais={carregarMais}
+        aoApagar={apagar}
+      />
     </main>
   );
 }

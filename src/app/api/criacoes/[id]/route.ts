@@ -4,3 +4,8 @@ export async function GET(_requisicao: Request, ctx: RouteContext<"/api/criacoes
   const { id } = await ctx.params;
   return repassarParaApi(`/criacoes/${encodeURIComponent(id)}`);
 }
+
+export async function DELETE(_requisicao: Request, ctx: RouteContext<"/api/criacoes/[id]">) {
+  const { id } = await ctx.params;
+  return repassarParaApi(`/criacoes/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

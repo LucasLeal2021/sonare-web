@@ -1,5 +1,6 @@
 // O BFF (as rotas /api/* do Next) só repassa para a sonare-api, que aqui é falsa.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DELETE } from "@/app/api/criacoes/[id]/route";
 import { GET, POST } from "@/app/api/criacoes/route";
 
 type Chamada = { url: string; corpo: unknown };
@@ -51,6 +52,21 @@ describe("BFF: POST /api/criacoes", () => {
 
     expect(resposta.status).toBe(200);
     expect(chamadas.map((c) => c.url)).toEqual(["http://api.falsa:3333/criacoes?depoisDe=c-20"]);
+  });
+
+  it("apagar é repassado à sonare-api, e o 204 (sem corpo) chega ao navegador como 204", async () => {
+    const chamadas: { url: string; metodo?: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      chamadas.push({ url, metodo: init?.method });
+      return new Response(null, { status: 204 });
+    });
+
+    const resposta = await DELETE(new Request("http://localhost:3000/api/criacoes/c-1", { method: "DELETE" }), {
+      params: Promise.resolve({ id: "c-1" }),
+    });
+
+    expect(resposta.status).toBe(204);
+    expect(chamadas).toEqual([{ url: "http://api.falsa:3333/criacoes/c-1", metodo: "DELETE" }]);
   });
 
   it("se a sonare-api está fora do ar, responde 502 com uma mensagem em português", async () => {

@@ -11,6 +11,7 @@ export async function repassarParaApi(caminho: string, init?: RequestInit) {
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
     });
+    if (resposta.status === 204) return new Response(null, { status: 204 }); // sucesso sem corpo (ex.: apagar)
     return Response.json(await resposta.json(), { status: resposta.status });
   } catch (erro) {
     // API desligada, caída no meio da resposta ou respondendo algo que não é JSON:
